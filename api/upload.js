@@ -1,15 +1,7 @@
-// api/upload.js — Vercel Serverless Function
-//
-// PURPOSE: Receive uploaded bytes from the browser and immediately ACK.
-// We do NOT forward to Cloudflare — the browser measures upload speed
-// purely via xhr.upload.onprogress client-side timing, which accurately
-// reflects bytes leaving the user's NIC over their ISP connection.
-// The server just needs to drain the body and respond quickly.
-
 export const config = {
   api: {
     bodyParser: false,
-    sizeLimit: '10mb',
+    sizeLimit: '32mb',  // allow up to 32MB chunks for fast connections
   },
 };
 
@@ -22,11 +14,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
 
   try {
-    // Drain body fast — just count bytes and discard, no processing
     let byteLength = 0;
     for await (const chunk of req) byteLength += chunk.length;
-
-    // Respond immediately — minimal latency so client timing is accurate
     res.status(200).json({ ok: true, bytes: byteLength });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
