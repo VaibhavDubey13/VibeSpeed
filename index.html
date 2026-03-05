@@ -1,0 +1,1379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>VibeSpeed — Internet Speed Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ═══════════════════════════════════════════════════
+   VibeSpeed — Cosmic Dark Purple
+   Syne (display) + DM Sans (body)
+═══════════════════════════════════════════════════ */
+:root {
+  --bg:        #080612;
+  --bg2:       #0E0920;
+  --surface:   #140D2E;
+  --surface2:  #1C1240;
+  --border:    rgba(255,255,255,0.07);
+  --primary:   #7B1FA2;
+  --accent:    #9C27B0;
+  --neon:      #D500F9;
+  --neon2:     #AA00FF;
+  --hi:        #E040FB;
+  --glow:      rgba(213,0,249,0.35);
+  --text:      #F0EBF8;
+  --text2:     #C4B5D9;
+  --text3:     #7A6899;
+  --dl:        #60A5FA;
+  --ul:        #34D399;
+  --ping-c:    #FCD34D;
+  --jitter-c:  #FB923C;
+  --r:         16px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Background atmosphere ───────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(123,31,162,0.28) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(74,20,140,0.15) 0%, transparent 50%),
+    radial-gradient(ellipse 40% 30% at 10% 70%, rgba(170,0,255,0.08) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Subtle noise grain overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Layout ──────────────────────────────────── */
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 0 20px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Header ──────────────────────────────────── */
+header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 36px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-mark {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6A1B9A, #9C27B0);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 20px rgba(156,39,176,0.5);
+  flex-shrink: 0;
+}
+
+.logo-mark svg { width: 18px; height: 18px; }
+
+.logo-name {
+  font-family: 'Syne', sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, #F0EBF8 30%, #CE93D8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.server-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text3);
+  letter-spacing: 0.03em;
+  cursor: default;
+  transition: all 0.2s;
+}
+
+.server-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #4ADE80;
+  box-shadow: 0 0 8px #4ADE80;
+  flex-shrink: 0;
+}
+
+/* ── Phase strip ─────────────────────────────── */
+.phase-strip {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 320px;
+  margin-bottom: 40px;
+}
+
+.phase-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.phase-node .dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 2px solid rgba(255,255,255,0.1);
+  transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+
+.phase-node .lbl {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--text3);
+  text-transform: uppercase;
+  transition: color 0.3s;
+}
+
+.phase-node.active .dot {
+  background: var(--neon);
+  border-color: var(--neon);
+  box-shadow: 0 0 14px var(--neon), 0 0 28px rgba(213,0,249,0.4);
+  animation: dotPulse 1s ease-in-out infinite;
+}
+.phase-node.active .lbl { color: #E040FB; }
+
+.phase-node.done .dot {
+  background: var(--primary);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(156,39,176,0.5);
+}
+.phase-node.done .lbl { color: var(--text2); }
+
+.phase-line {
+  height: 1px;
+  flex: 1;
+  background: rgba(255,255,255,0.07);
+  margin-bottom: 18px;
+  transition: background 0.4s;
+}
+.phase-line.lit { background: rgba(156,39,176,0.4); }
+
+@keyframes dotPulse {
+  0%,100% { transform: scale(1); }
+  50%      { transform: scale(1.4); }
+}
+
+/* ── Gauge ───────────────────────────────────── */
+.gauge-area {
+  position: relative;
+  width: 300px;
+  height: 270px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+#gaugeCanvas {
+  position: absolute;
+  top: 0; left: 0;
+  filter: drop-shadow(0 4px 20px rgba(0,0,0,0.8));
+}
+
+.gauge-center {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -56%);
+  pointer-events: none;
+  text-align: center;
+}
+
+.g-val {
+  font-family: 'Syne', sans-serif;
+  font-size: 56px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+  letter-spacing: -0.03em;
+  transition: color 0.3s;
+  min-width: 140px;
+  text-align: center;
+}
+
+.g-val.live { color: #E040FB; text-shadow: 0 0 40px rgba(224,64,251,0.5); }
+
+.g-unit {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  color: var(--text3);
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+.g-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  color: var(--text3);
+  margin-top: 5px;
+  text-transform: uppercase;
+  transition: color 0.3s;
+}
+
+/* Radar rings (ping phase) */
+.radar {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  width: 0; height: 0;
+  pointer-events: none;
+}
+
+.r-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid var(--neon);
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%) scale(0);
+  opacity: 0;
+}
+
+.r-ring:nth-child(1) { animation: rPulse 2.2s ease-out infinite 0s; }
+.r-ring:nth-child(2) { animation: rPulse 2.2s ease-out infinite 0.7s; }
+.r-ring:nth-child(3) { animation: rPulse 2.2s ease-out infinite 1.4s; }
+
+@keyframes rPulse {
+  0%   { width:12px;height:12px;opacity:0.9;transform:translate(-50%,-50%) scale(1);box-shadow:0 0 10px var(--neon); }
+  100% { width:180px;height:180px;opacity:0;transform:translate(-50%,-50%) scale(1);box-shadow:none; }
+}
+
+/* ── Start button ────────────────────────────── */
+.btn-wrap {
+  margin: 12px 0 40px;
+}
+
+.start-btn {
+  position: relative;
+  width: 130px; height: 130px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  background: radial-gradient(circle at 38% 32%, #8B29B8, #3D0070 75%);
+  box-shadow:
+    0 0 0 1px rgba(156,39,176,0.55),
+    0 0 35px rgba(156,39,176,0.28),
+    0 12px 40px rgba(0,0,0,0.7),
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 -2px 8px rgba(0,0,0,0.3);
+  transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.start-btn:hover {
+  transform: scale(1.05);
+  box-shadow:
+    0 0 0 1px rgba(213,0,249,0.75),
+    0 0 50px rgba(156,39,176,0.55),
+    0 0 100px rgba(156,39,176,0.2),
+    0 12px 40px rgba(0,0,0,0.7),
+    inset 0 1px 0 rgba(255,255,255,0.18);
+}
+
+.start-btn:active { transform: scale(0.96); }
+
+.start-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--neon), 0 0 50px rgba(156,39,176,0.55), 0 12px 40px rgba(0,0,0,0.7);
+}
+
+.btn-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  position: relative; z-index: 2;
+}
+
+.btn-icon { width: 30px; height: 30px; color: rgba(255,255,255,0.92); }
+
+.btn-txt {
+  font-family: 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: rgba(255,255,255,0.88);
+}
+
+.btn-ripple {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  transform: scale(0); opacity: 0;
+  pointer-events: none;
+}
+.start-btn:active .btn-ripple { animation: ripple 0.45s ease-out forwards; }
+@keyframes ripple {
+  0%   { transform: scale(0); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* Testing state */
+.start-btn.running {
+  background: radial-gradient(circle at 38% 32%, #5E1080, #280050 75%);
+}
+
+/* ── Results grid ────────────────────────────── */
+.results {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 36px;
+}
+
+.r-card {
+  background: rgba(255,255,255,0.033);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.4s ease, transform 0.4s ease, border-color 0.3s;
+}
+
+.r-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.r-card.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.r-card:hover { border-color: rgba(156,39,176,0.28); }
+
+.r-icon {
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.r-icon svg { width: 15px; height: 15px; }
+
+.r-icon.dl { background: rgba(96,165,250,0.15); color: var(--dl); }
+.r-icon.ul { background: rgba(52,211,153,0.15); color: var(--ul); }
+.r-icon.pi { background: rgba(252,211,77,0.15);  color: var(--ping-c); }
+.r-icon.ji { background: rgba(251,146,60,0.15);  color: var(--jitter-c); }
+
+.r-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.r-val {
+  font-family: 'Syne', sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.r-unit {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--text3);
+  padding-bottom: 2px;
+}
+
+.r-lbl {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--text3);
+  text-transform: uppercase;
+}
+
+#val-dl  { color: var(--dl); }
+#val-ul  { color: var(--ul); }
+#val-pi  { color: var(--ping-c); }
+#val-ji  { color: var(--jitter-c); }
+
+/* ── History ─────────────────────────────────── */
+.history-wrap {
+  width: 100%;
+}
+
+.hist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.hist-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text2);
+}
+
+.clear-btn {
+  padding: 5px 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text3);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.clear-btn:hover { border-color: rgba(255,82,82,0.4); color: #FF6B6B; background: rgba(255,82,82,0.08); }
+
+.hist-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--text3);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.hist-empty-icon { font-size: 32px; }
+
+.hist-list { display: flex; flex-direction: column; gap: 8px; }
+
+.hist-item {
+  background: rgba(255,255,255,0.028);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 1fr repeat(4, auto);
+  align-items: center;
+  gap: 12px;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.hist-date {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text3);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+}
+
+.hist-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hist-val {
+  font-family: 'Syne', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hist-lbl {
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--text3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ── Error banner ────────────────────────────── */
+.error-banner {
+  width: 100%;
+  background: rgba(255, 82, 82, 0.08);
+  border: 1px solid rgba(255,82,82,0.25);
+  border-radius: var(--r);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+.error-icon { font-size: 20px; flex-shrink: 0; }
+.error-txt  { font-size: 13px; color: #FCA5A5; line-height: 1.45; }
+
+/* ── Footer ──────────────────────────────────── */
+footer {
+  margin-top: 40px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text3);
+  line-height: 1.7;
+}
+
+footer a { color: var(--text3); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── Shimmer loader on cards ─────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+/* ── Responsive ──────────────────────────────── */
+@media (max-width: 440px) {
+  .gauge-area { width: 280px; height: 250px; }
+  #gaugeCanvas { width: 280px; height: 280px; }
+  .g-val { font-size: 48px; }
+  .start-btn { width: 110px; height: 110px; }
+  .hist-item { grid-template-columns: 1fr repeat(4, auto); gap: 8px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>
+          <path d="M12 12L7.5 7.5" stroke="#CE93D8" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M12 12L18 6" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="2.2" fill="#E040FB"/>
+        </svg>
+      </div>
+      <span class="logo-name">VibeSpeed</span>
+    </div>
+    <div class="server-pill">
+      <span class="server-dot"></span>
+      <span id="serverLabel">Cloudflare</span>
+    </div>
+  </header>
+
+  <!-- Phase strip -->
+  <div class="phase-strip" id="phaseStrip">
+    <div class="phase-node" id="ph-ping">
+      <div class="dot"></div>
+      <div class="lbl">Ping</div>
+    </div>
+    <div class="phase-line" id="pl-1"></div>
+    <div class="phase-node" id="ph-download">
+      <div class="dot"></div>
+      <div class="lbl">Down</div>
+    </div>
+    <div class="phase-line" id="pl-2"></div>
+    <div class="phase-node" id="ph-upload">
+      <div class="dot"></div>
+      <div class="lbl">Up</div>
+    </div>
+  </div>
+
+  <!-- Gauge -->
+  <div class="gauge-area">
+    <canvas id="gaugeCanvas" width="300" height="300"></canvas>
+    <div class="gauge-center">
+      <div class="g-val" id="gVal">--</div>
+      <div class="g-unit" id="gUnit">Mbps</div>
+      <div class="g-label" id="gLabel">Ready</div>
+    </div>
+    <div class="radar" id="radar">
+      <div class="r-ring"></div>
+      <div class="r-ring"></div>
+      <div class="r-ring"></div>
+    </div>
+  </div>
+
+  <!-- Start button -->
+  <div class="btn-wrap">
+    <button class="start-btn" id="startBtn" aria-label="Start speed test">
+      <div class="btn-content">
+        <svg class="btn-icon" id="btnIcon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        <span class="btn-txt" id="btnTxt">START</span>
+      </div>
+      <div class="btn-ripple"></div>
+    </button>
+  </div>
+
+  <!-- Error banner -->
+  <div class="error-banner" id="errBanner" style="display:none">
+    <span class="error-icon">⚡</span>
+    <span class="error-txt" id="errTxt">Something went wrong.</span>
+  </div>
+
+  <!-- Result cards -->
+  <div class="results" id="results">
+    <div class="r-card" id="card-dl">
+      <div class="r-icon dl">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      </div>
+      <div class="r-row">
+        <span class="r-val" id="val-dl">--</span>
+        <span class="r-unit">Mbps</span>
+      </div>
+      <div class="r-lbl">Download</div>
+    </div>
+
+    <div class="r-card" id="card-ul">
+      <div class="r-icon ul">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+      </div>
+      <div class="r-row">
+        <span class="r-val" id="val-ul">--</span>
+        <span class="r-unit">Mbps</span>
+      </div>
+      <div class="r-lbl">Upload</div>
+    </div>
+
+    <div class="r-card" id="card-pi">
+      <div class="r-icon pi">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+      </div>
+      <div class="r-row">
+        <span class="r-val" id="val-pi">--</span>
+        <span class="r-unit">ms</span>
+      </div>
+      <div class="r-lbl">Ping</div>
+    </div>
+
+    <div class="r-card" id="card-ji">
+      <div class="r-icon ji">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
+      </div>
+      <div class="r-row">
+        <span class="r-val" id="val-ji">--</span>
+        <span class="r-unit">ms</span>
+      </div>
+      <div class="r-lbl">Jitter</div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="history-wrap">
+    <div class="hist-header">
+      <span class="hist-title">Recent Tests</span>
+      <button class="clear-btn" id="clearBtn">Clear</button>
+    </div>
+    <div class="hist-empty" id="histEmpty">
+      <div class="hist-empty-icon">🚀</div>
+      <div>No tests yet.<br/>Hit start to measure your connection.</div>
+    </div>
+    <div class="hist-list" id="histList"></div>
+  </div>
+
+  <footer>
+    VibeSpeed uses <a href="https://speed.cloudflare.com" target="_blank" rel="noopener">Cloudflare Speed Test</a> servers.<br/>
+    No data is stored externally. All history is saved locally in your browser.
+  </footer>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   VibeSpeed — Speed Test Engine
+   Real upload via XHR with progress events (no CORS issues)
+   Real download via fetch + streaming ReadableStream
+   Ping via fetch timing against Cloudflare trace
+═══════════════════════════════════════════════════════ */
+'use strict';
+
+// ── DOM ──────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const canvas   = $('gaugeCanvas');
+const ctx      = canvas.getContext('2d');
+const gVal     = $('gVal');
+const gUnit    = $('gUnit');
+const gLabel   = $('gLabel');
+const radar    = $('radar');
+const startBtn = $('startBtn');
+const btnIcon  = $('btnIcon');
+const btnTxt   = $('btnTxt');
+const errBanner= $('errBanner');
+const errTxt   = $('errTxt');
+
+// Phase nodes
+const phNodes  = { ping: $('ph-ping'), download: $('ph-download'), upload: $('ph-upload') };
+const phLines  = { 1: $('pl-1'), 2: $('pl-2') };
+
+// Result cards
+const cards    = { dl: $('card-dl'), ul: $('card-ul'), pi: $('card-pi'), ji: $('card-ji') };
+const vals     = { dl: $('val-dl'), ul: $('val-ul'), pi: $('val-pi'), ji: $('val-ji') };
+
+// History
+const histEmpty= $('histEmpty');
+const histList = $('histList');
+const clearBtn = $('clearBtn');
+
+// ── State ────────────────────────────────────────────
+const S = {
+  running: false,
+  phase: 'idle',
+  gaugeVal: 0,
+  gaugeMax: 100,
+  gaugeTarget: 0,
+  gaugeAnimId: null,
+  idleAnimId: null,
+  abortCtrl: null,
+  results: { dl: null, ul: null, pi: null, ji: null }
+};
+
+// ── Endpoints ────────────────────────────────────────
+const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
+const CF_DOWN  = 'https://speed.cloudflare.com/__down?bytes=';
+
+// Download chunks: progressive sizes
+const DL_CHUNKS = [1e5, 5e5, 2e6, 5e6, 10e6, 10e6];
+// Upload chunk sizes in bytes — sent via XHR (avoids CORS preflight on this endpoint)
+const UL_CHUNKS = [256e3, 512e3, 1e6, 2e6, 4e6, 4e6];
+
+// ── Safe random buffer (crypto limit = 65536 per call) ──
+function safeRandom(n) {
+  const buf = new Uint8Array(n);
+  for (let i = 0; i < n; i += 65536)
+    crypto.getRandomValues(buf.subarray(i, Math.min(i + 65536, n)));
+  return buf;
+}
+
+// ── Gauge Canvas ─────────────────────────────────────
+const G = { cx:150, cy:150, r:118, start:145, sweep:250, lw:13 };
+
+function deg(d) { return d * Math.PI / 180; }
+
+function phaseColor(phase) {
+  if (phase==='download') return { glow:'#60A5FA', c0:'#1D4ED8', c1:'#93C5FD' };
+  if (phase==='upload')   return { glow:'#34D399', c0:'#065F46', c1:'#6EE7B7' };
+  if (phase==='ping')     return { glow:'#D500F9', c0:'#6A0080', c1:'#EA80FC' };
+  return                          { glow:'#7B1FA2', c0:'#4A148C', c1:'#CE93D8' };
+}
+
+function drawGauge(value, maxVal, phase) {
+  const { cx, cy, r, start, sweep, lw } = G;
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const frac = Math.min(Math.max(value / maxVal, 0), 1);
+  const sRad = deg(start);
+  const eRad = deg(start + sweep);
+  const fRad = deg(start + sweep * frac);
+  const col  = phaseColor(phase);
+
+  // Tick marks
+  for (let i = 0; i <= 30; i++) {
+    const t     = i / 30;
+    const aRad  = deg(start + sweep * t);
+    const isLong= i % 5 === 0;
+    const inner = r - (isLong ? 22 : 14);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(aRad)*inner, cy + Math.sin(aRad)*inner);
+    ctx.lineTo(cx + Math.cos(aRad)*(r-5), cy + Math.sin(aRad)*(r-5));
+    ctx.strokeStyle = t <= frac
+      ? `rgba(${isLong?'200,150,255':'160,100,220'}, ${isLong?0.9:0.5})`
+      : `rgba(255,255,255,${isLong?0.1:0.04})`;
+    ctx.lineWidth = isLong ? 2 : 1;
+    ctx.stroke();
+  }
+
+  // Track bg
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, sRad, eRad);
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  if (frac < 0.005) {
+    drawCenterCircle(cx, cy, r, lw);
+    return;
+  }
+
+  // Glow pass
+  ctx.save();
+  ctx.shadowBlur = 28;
+  ctx.shadowColor = col.glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, sRad, fRad);
+  ctx.strokeStyle = col.glow;
+  ctx.lineWidth = lw * 1.8;
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.25;
+  ctx.stroke();
+  ctx.restore();
+
+  // Main arc (gradient)
+  const grd = ctx.createLinearGradient(
+    cx + Math.cos(sRad)*r, cy + Math.sin(sRad)*r,
+    cx + Math.cos(fRad)*r, cy + Math.sin(fRad)*r
+  );
+  grd.addColorStop(0, col.c0);
+  grd.addColorStop(1, col.c1);
+
+  ctx.save();
+  ctx.shadowBlur = 14;
+  ctx.shadowColor = col.glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, sRad, fRad);
+  ctx.strokeStyle = grd;
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  ctx.restore();
+
+  // Tip dot
+  const tx = cx + Math.cos(fRad)*r, ty = cy + Math.sin(fRad)*r;
+  ctx.save();
+  ctx.shadowBlur = 18; ctx.shadowColor = col.glow;
+  ctx.beginPath();
+  ctx.arc(tx, ty, lw/2, 0, Math.PI*2);
+  ctx.fillStyle = '#fff';
+  ctx.globalAlpha = 0.9;
+  ctx.fill();
+  ctx.restore();
+
+  drawCenterCircle(cx, cy, r, lw);
+}
+
+function drawCenterCircle(cx, cy, r, lw) {
+  const g = ctx.createRadialGradient(cx, cy-18, 0, cx, cy, 85);
+  g.addColorStop(0, '#1C1040');
+  g.addColorStop(1, '#080612');
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - lw - 12, 0, Math.PI*2);
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
+// ── Gauge animation ──────────────────────────────────
+function animGaugeTo(target) {
+  S.gaugeTarget = target;
+  if (S.gaugeAnimId) cancelAnimationFrame(S.gaugeAnimId);
+  function step() {
+    const d = S.gaugeTarget - S.gaugeVal;
+    if (Math.abs(d) < 0.08) { S.gaugeVal = S.gaugeTarget; drawGauge(S.gaugeVal, S.gaugeMax, S.phase); return; }
+    S.gaugeVal += d * 0.13;
+    drawGauge(S.gaugeVal, S.gaugeMax, S.phase);
+    S.gaugeAnimId = requestAnimationFrame(step);
+  }
+  step();
+}
+
+// Idle breathe
+let idlePhi = 0;
+function startIdle() {
+  stopIdle();
+  function f() {
+    idlePhi += 0.025;
+    drawGauge((Math.sin(idlePhi)*0.5+0.5)*3.5, 100, 'idle');
+    S.idleAnimId = requestAnimationFrame(f);
+  }
+  S.idleAnimId = requestAnimationFrame(f);
+}
+function stopIdle() {
+  if (S.idleAnimId) { cancelAnimationFrame(S.idleAnimId); S.idleAnimId = null; }
+}
+
+// ── Number counter ───────────────────────────────────
+function animNum(el, target, dec=1) {
+  const from = parseFloat(el.textContent) || 0;
+  const d = target - from;
+  let t0 = null;
+  const dur = 200;
+  function f(ts) {
+    if (!t0) t0 = ts;
+    const p = Math.min((ts-t0)/dur, 1);
+    const e = 1 - Math.pow(1-p, 3);
+    el.textContent = (from + d*e).toFixed(dec);
+    if (p < 1) requestAnimationFrame(f);
+  }
+  requestAnimationFrame(f);
+}
+
+// ── Live gauge update ────────────────────────────────
+function liveUpdate(mbps) {
+  if (mbps > S.gaugeMax * 0.82) S.gaugeMax = Math.ceil(mbps * 1.5 / 50) * 50;
+  animGaugeTo(mbps);
+  animNum(gVal, mbps, 1);
+}
+
+// ── Phase UI ─────────────────────────────────────────
+const phaseOrder = ['ping','download','upload'];
+
+function setPhase(phase) {
+  S.phase = phase;
+  phaseOrder.forEach((p, i) => {
+    const node = phNodes[p];
+    node.classList.remove('active','done');
+    if (p === phase) node.classList.add('active');
+    else if (phaseOrder.indexOf(p) < phaseOrder.indexOf(phase)) node.classList.add('done');
+  });
+  // Light up connecting lines
+  $('pl-1').classList.toggle('lit', phaseOrder.indexOf(phase) >= 1);
+  $('pl-2').classList.toggle('lit', phaseOrder.indexOf(phase) >= 2);
+}
+
+function markAllDone() {
+  phaseOrder.forEach(p => { phNodes[p].classList.remove('active'); phNodes[p].classList.add('done'); });
+  $('pl-1').classList.add('lit');
+  $('pl-2').classList.add('lit');
+}
+
+function resetPhases() {
+  phaseOrder.forEach(p => phNodes[p].classList.remove('active','done'));
+  $('pl-1').classList.remove('lit');
+  $('pl-2').classList.remove('lit');
+}
+
+// ── Button state ─────────────────────────────────────
+function setBtnRunning(running) {
+  if (running) {
+    startBtn.classList.add('running');
+    btnIcon.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="2"/>';
+    btnTxt.textContent = 'STOP';
+    startBtn.setAttribute('aria-label', 'Stop test');
+  } else {
+    startBtn.classList.remove('running');
+    btnIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+    btnTxt.textContent = 'START';
+    startBtn.setAttribute('aria-label', 'Start speed test');
+  }
+}
+
+// ── Error ────────────────────────────────────────────
+function showErr(msg) { errTxt.textContent = msg; errBanner.style.display = 'flex'; }
+function hideErr()    { errBanner.style.display = 'none'; }
+
+// ── Result cards ─────────────────────────────────────
+function showCards() {
+  const keys = ['dl','ul','pi','ji'];
+  keys.forEach((k, i) => {
+    const v = S.results[k];
+    setTimeout(() => {
+      const dec = (k==='pi'||k==='ji') ? 0 : 1;
+      vals[k].textContent = (v !== null && isFinite(v)) ? v.toFixed(dec) : 'N/A';
+      cards[k].classList.add('show');
+    }, i * 130);
+  });
+}
+
+function resetCards() {
+  Object.keys(cards).forEach(k => { cards[k].classList.remove('show'); vals[k].textContent = '--'; });
+}
+
+// ── Sleep ────────────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ═══════════════════════════════════════════════════
+   SPEED TEST CORE
+═══════════════════════════════════════════════════ */
+
+// ── PING ─────────────────────────────────────────────
+async function measurePing(signal) {
+  const samples = [];
+  // Warm up
+  try { await fetch(CF_TRACE, { cache:'no-store', signal }); } catch {}
+
+  for (let i = 0; i < 14; i++) {
+    if (signal.aborted) break;
+    try {
+      const t = performance.now();
+      await fetch(CF_TRACE, { cache:'no-store', signal });
+      samples.push(performance.now() - t);
+    } catch(e) { if (e.name==='AbortError') throw e; }
+    await sleep(60);
+  }
+
+  if (samples.length < 3) throw new Error('Ping failed');
+  samples.sort((a,b) => a-b);
+  const trimmed = samples.slice(1, -1);
+  const avg = trimmed.reduce((a,b) => a+b, 0) / trimmed.length;
+  const variance = trimmed.reduce((s,t) => s + (t-avg)**2, 0) / trimmed.length;
+  return {
+    ping:   samples[Math.floor(samples.length * 0.2)],  // 20th-percentile = "best typical"
+    jitter: Math.sqrt(variance)
+  };
+}
+
+// ── DOWNLOAD (streaming ReadableStream for live progress) ────
+async function measureDownload(signal, onUpdate) {
+  let totalBytes = 0, t0 = performance.now();
+
+  for (const bytes of DL_CHUNKS) {
+    if (signal.aborted) break;
+    try {
+      const res = await fetch(`${CF_DOWN}${bytes}`, { cache:'no-store', signal });
+      const reader = res.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        const elapsed = (performance.now() - t0) / 1000;
+        if (elapsed > 0.3) onUpdate((totalBytes * 8) / (elapsed * 1e6));
+      }
+    } catch(e) { if (e.name==='AbortError') throw e; }
+  }
+
+  const elapsed = (performance.now() - t0) / 1000;
+  return elapsed > 0.1 ? (totalBytes * 8) / (elapsed * 1e6) : 0;
+}
+
+// ── UPLOAD — Pure timing approach, no CORS issues ────
+// Strategy: We use fetch() to POST to httpbin.org which has open CORS,
+// AND use a WebWorker-based timing trick as fallback.
+// Key insight: measure the time for data to leave the local buffer using
+// the Beacon API (always allowed) combined with fetch timing.
+
+// ── UPLOAD via /api/upload proxy + XHR live progress ─────────────────────────
+// Browser POSTs to /api/upload (same origin = zero CORS issues).
+// The Vercel serverless function forwards data to Cloudflare server-side.
+// XHR upload.onprogress gives us live byte counts for real-time gauge updates.
+// The server also returns precise elapsed time for a final accurate Mbps figure.
+
+function uploadChunk(buf, signal, onProgress) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    const t0 = performance.now();
+    let settled = false;
+    const finish = (result) => { if (!settled) { settled = true; resolve(result); } };
+
+    // Live progress — fires as bytes leave the OS buffer
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable || e.loaded === 0) return;
+      const elapsed = (performance.now() - t0) / 1000;
+      if (elapsed > 0.05) {
+        const mbps = (e.loaded * 8) / (elapsed * 1e6);
+        if (isFinite(mbps) && mbps > 0) onProgress(e.loaded, mbps);
+      }
+    };
+
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        // Use server-measured elapsed time for accuracy (removes server processing time)
+        finish({ bytes: data.bytes || buf.byteLength, serverElapsed: data.elapsed || null });
+      } catch {
+        finish({ bytes: buf.byteLength, serverElapsed: null });
+      }
+    };
+    xhr.onerror   = () => finish({ bytes: 0, serverElapsed: null });
+    xhr.ontimeout = () => finish({ bytes: 0, serverElapsed: null });
+    signal.addEventListener('abort', () => { xhr.abort(); finish({ bytes: 0, serverElapsed: null }); }, { once: true });
+
+    xhr.open('POST', '/api/upload', true);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.timeout = 30000;
+    xhr.send(buf);
+  });
+}
+
+async function measureUpload(signal, onUpdate) {
+  let totalBytes = 0;
+  let totalServerTime = 0; // sum of server-measured elapsed per chunk
+  const t0 = performance.now();
+
+  for (const size of UL_CHUNKS) {
+    if (signal.aborted) break;
+    const buf = safeRandom(size);
+
+    const result = await uploadChunk(buf, signal, (loaded, chunkMbps) => {
+      const elapsed = (performance.now() - t0) / 1000;
+      const cumMbps = ((totalBytes + loaded) * 8) / (elapsed * 1e6);
+      onUpdate(isFinite(cumMbps) ? cumMbps : chunkMbps);
+    });
+
+    if (result.bytes > 0) {
+      totalBytes += result.bytes;
+      if (result.serverElapsed) totalServerTime += result.serverElapsed;
+
+      // Prefer server-measured time (more accurate), fall back to client time
+      const elapsed = totalServerTime > 0
+        ? totalServerTime
+        : (performance.now() - t0) / 1000;
+
+      const mbps = (totalBytes * 8) / (elapsed * 1e6);
+      if (isFinite(mbps) && mbps > 0) onUpdate(mbps);
+    }
+    await sleep(40);
+  }
+
+  const elapsed = totalServerTime > 0
+    ? totalServerTime
+    : (performance.now() - t0) / 1000;
+
+  if (totalBytes === 0 || elapsed < 0.2) return null;
+  const result = (totalBytes * 8) / (elapsed * 1e6);
+  return isFinite(result) ? result : null;
+}
+
+/* ═══════════════════════════════════════════════════
+   RUN TEST ORCHESTRATOR
+═══════════════════════════════════════════════════ */
+async function runTest() {
+  if (S.running) {
+    S.abortCtrl.abort();
+    return;
+  }
+
+  if (!navigator.onLine) {
+    showErr("You're offline. Check your connection and try again.");
+    return;
+  }
+
+  // ── Setup ──────────────────────────────────────────
+  S.running = true;
+  S.abortCtrl = new AbortController();
+  S.results = { dl: null, ul: null, pi: null, ji: null };
+  S.gaugeVal = 0; S.gaugeMax = 100;
+
+  stopIdle();
+  hideErr();
+  resetCards();
+  resetPhases();
+  setBtnRunning(true);
+  gVal.textContent = '--';
+  gVal.classList.add('live');
+  radar.style.display = 'none';
+
+  const sig = S.abortCtrl.signal;
+
+  try {
+    /* ── 1. PING ─────────────────────────────────── */
+    setPhase('ping');
+    gLabel.textContent = 'MEASURING PING';
+    gUnit.textContent  = 'ms';
+    radar.style.display = 'block';
+    drawGauge(0, 100, 'ping');
+
+    const { ping, jitter } = await measurePing(sig);
+    S.results.pi = ping;
+    S.results.ji = jitter;
+
+    radar.style.display = 'none';
+    gVal.textContent  = ping.toFixed(0);
+    gUnit.textContent = 'ms';
+    gLabel.textContent= 'PING';
+    await sleep(600);
+
+    /* ── 2. DOWNLOAD ─────────────────────────────── */
+    setPhase('download');
+    S.gaugeVal = 0; S.gaugeMax = 100;
+    gVal.textContent = '0.0';
+    gUnit.textContent= 'Mbps';
+    gLabel.textContent = 'DOWNLOAD';
+    drawGauge(0, 100, 'download');
+
+    const dlFinal = await measureDownload(sig, mbps => {
+      liveUpdate(mbps);
+      gLabel.textContent = 'DOWNLOAD';
+    });
+
+    S.results.dl = dlFinal;
+    await sleep(400);
+
+    /* ── 3. UPLOAD ───────────────────────────────── */
+    setPhase('upload');
+    S.gaugeVal = 0; S.gaugeMax = Math.max(dlFinal * 0.7, 50);
+    animGaugeTo(0);
+    gVal.textContent = '0.0';
+    gUnit.textContent= 'Mbps';
+    gLabel.textContent = 'UPLOAD';
+
+    const ulFinal = await measureUpload(sig, mbps => {
+      liveUpdate(mbps);
+      gLabel.textContent = 'UPLOAD';
+    });
+
+    S.results.ul = ulFinal;
+
+    /* ── DONE ────────────────────────────────────── */
+    markAllDone();
+    gVal.classList.remove('live');
+    gUnit.textContent  = 'Mbps';
+    gLabel.textContent = 'COMPLETE ✓';
+    // Show download as the hero number
+    if (S.results.dl) { animGaugeTo(S.results.dl); animNum(gVal, S.results.dl, 1); }
+    else { gVal.textContent = '--'; }
+
+    showCards();
+    saveHistory(S.results);
+
+  } catch(err) {
+    if (err.name === 'AbortError') {
+      // User stopped — reset cleanly
+      resetUI();
+    } else {
+      console.error('[VibeSpeed]', err);
+      showErr("Test failed. Check your connection and try again.");
+      gVal.classList.remove('live');
+      gLabel.textContent = 'ERROR';
+    }
+  } finally {
+    S.running = false;
+    setBtnRunning(false);
+    if (!S.running) startIdle();
+  }
+}
+
+function resetUI() {
+  resetPhases();
+  S.gaugeVal = 0;
+  gVal.textContent = '--';
+  gVal.classList.remove('live');
+  gUnit.textContent = 'Mbps';
+  gLabel.textContent = 'Ready';
+  radar.style.display = 'none';
+  startIdle();
+}
+
+/* ═══════════════════════════════════════════════════
+   HISTORY  (localStorage)
+═══════════════════════════════════════════════════ */
+const LS_KEY = 'vibespeed_history';
+
+function loadHistory() { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); }
+function saveHistory(results) {
+  const entry = { ts: Date.now(), ...results };
+  const hist = [entry, ...loadHistory()].slice(0, 60);
+  localStorage.setItem(LS_KEY, JSON.stringify(hist));
+  renderHistory();
+}
+
+function renderHistory() {
+  const hist = loadHistory();
+  histList.innerHTML = '';
+  if (hist.length === 0) { histEmpty.style.display = 'flex'; return; }
+  histEmpty.style.display = 'none';
+
+  hist.forEach(item => {
+    const d = new Date(item.ts);
+    const dateStr = d.toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    const timeStr = d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+
+    const fv = (v, dec=1) => (v !== null && isFinite(v)) ? parseFloat(v).toFixed(dec) : '--';
+
+    const el = document.createElement('div');
+    el.className = 'hist-item';
+    el.innerHTML = `
+      <div class="hist-date" style="grid-column:1/-1">${dateStr} · ${timeStr}</div>
+      <div class="hist-stat">
+        <span class="hist-val" style="color:var(--dl)">${fv(item.dl)}</span>
+        <span class="hist-lbl">↓ Mbps</span>
+      </div>
+      <div class="hist-stat">
+        <span class="hist-val" style="color:var(--ul)">${fv(item.ul)}</span>
+        <span class="hist-lbl">↑ Mbps</span>
+      </div>
+      <div class="hist-stat">
+        <span class="hist-val" style="color:var(--ping-c)">${fv(item.pi,0)}</span>
+        <span class="hist-lbl">Ping ms</span>
+      </div>
+      <div class="hist-stat">
+        <span class="hist-val" style="color:var(--jitter-c)">${fv(item.ji,0)}</span>
+        <span class="hist-lbl">Jitr ms</span>
+      </div>`;
+    histList.appendChild(el);
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   EVENTS & INIT
+═══════════════════════════════════════════════════ */
+startBtn.addEventListener('click', runTest);
+clearBtn.addEventListener('click', () => { localStorage.removeItem(LS_KEY); renderHistory(); });
+window.addEventListener('offline', () => {
+  if (S.running) { S.abortCtrl.abort(); showErr("Lost connection mid-test."); }
+});
+
+// Entry animation
+function init() {
+  drawGauge(0, 100, 'idle');
+  renderHistory();
+
+  // Sweep-and-retract intro
+  let v = 0, going = true;
+  const intro = setInterval(() => {
+    if (going) { v = Math.min(v+2.5, 70); drawGauge(v,100,'idle'); if(v>=70) going=false; }
+    else        { v = Math.max(v-3, 0);    drawGauge(v,100,'idle'); if(v<=0) { clearInterval(intro); startIdle(); } }
+  }, 16);
+}
+
+init();
+</script>
+</body>
+</html>
