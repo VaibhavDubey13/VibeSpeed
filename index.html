@@ -1215,47 +1215,42 @@ async function measureDownload(signal, onUpdate) {
   return elapsed > 0.1 ? (totalBytes * 8) / (elapsed * 1e6) : 0;
 }
 
-// ── UPLOAD — Pure timing approach, no CORS issues ────
-// Strategy: We use fetch() to POST to httpbin.org which has open CORS,
-// AND use a WebWorker-based timing trick as fallback.
-// Key insight: measure the time for data to leave the local buffer using
-// the Beacon API (always allowed) combined with fetch timing.
-
-// ── UPLOAD via /api/upload proxy + XHR live progress ─────────────────────────
-// Browser POSTs to /api/upload (same origin = zero CORS issues).
-// The Vercel serverless function forwards data to Cloudflare server-side.
-// XHR upload.onprogress gives us live byte counts for real-time gauge updates.
-// The server also returns precise elapsed time for a final accurate Mbps figure.
+// ── UPLOAD — Client-side timing only (accurate ISP measurement) ──────────────
+// Key insight: xhr.upload.onprogress fires as bytes physically leave your NIC.
+// Timing these events against bytes sent = your real upload speed to the server.
+// We deliberately IGNORE any server-reported timing — Vercel's datacenter
+// is too fast and would make upload look inflated.
+// We also run multiple chunks and take a weighted average for stability.
 
 function uploadChunk(buf, signal, onProgress) {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     const t0 = performance.now();
+    let lastLoaded = 0;
     let settled = false;
     const finish = (result) => { if (!settled) { settled = true; resolve(result); } };
 
-    // Live progress — fires as bytes leave the OS buffer
-    xhr.upload.onprogress = (e) => {
+    xhr.upload.addEventListener('progress', (e) => {
       if (!e.lengthComputable || e.loaded === 0) return;
       const elapsed = (performance.now() - t0) / 1000;
-      if (elapsed > 0.05) {
+      // Only start reporting after 100ms to avoid OS buffer flush spikes
+      if (elapsed > 0.1 && e.loaded > lastLoaded) {
+        lastLoaded = e.loaded;
         const mbps = (e.loaded * 8) / (elapsed * 1e6);
-        if (isFinite(mbps) && mbps > 0) onProgress(e.loaded, mbps);
+        if (isFinite(mbps) && mbps > 0) onProgress(e.loaded, elapsed);
       }
-    };
+    });
 
-    xhr.onload = () => {
-      try {
-        const data = JSON.parse(xhr.responseText);
-        // Use server-measured elapsed time for accuracy (removes server processing time)
-        finish({ bytes: data.bytes || buf.byteLength, serverElapsed: data.elapsed || null });
-      } catch {
-        finish({ bytes: buf.byteLength, serverElapsed: null });
-      }
-    };
-    xhr.onerror   = () => finish({ bytes: 0, serverElapsed: null });
-    xhr.ontimeout = () => finish({ bytes: 0, serverElapsed: null });
-    signal.addEventListener('abort', () => { xhr.abort(); finish({ bytes: 0, serverElapsed: null }); }, { once: true });
+    xhr.upload.addEventListener('load', () => {
+      // Upload complete — use final client time for this chunk
+      const elapsed = (performance.now() - t0) / 1000;
+      finish({ bytes: buf.byteLength, clientElapsed: elapsed });
+    });
+
+    xhr.onload   = () => finish({ bytes: buf.byteLength, clientElapsed: (performance.now() - t0) / 1000 });
+    xhr.onerror  = () => finish({ bytes: 0, clientElapsed: 0 });
+    xhr.ontimeout= () => finish({ bytes: 0, clientElapsed: 0 });
+    signal.addEventListener('abort', () => { xhr.abort(); finish({ bytes: 0, clientElapsed: 0 }); }, { once: true });
 
     xhr.open('POST', '/api/upload', true);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
@@ -1265,42 +1260,42 @@ function uploadChunk(buf, signal, onProgress) {
 }
 
 async function measureUpload(signal, onUpdate) {
+  // Warm-up: one small chunk to establish connection, result discarded
+  try {
+    const warmBuf = safeRandom(64 * 1024); // 64KB
+    await uploadChunk(warmBuf, signal, () => {});
+  } catch(e) { if (e.name === 'AbortError') throw e; }
+
   let totalBytes = 0;
-  let totalServerTime = 0; // sum of server-measured elapsed per chunk
+  let totalElapsed = 0; // cumulative client-side upload time only
   const t0 = performance.now();
 
   for (const size of UL_CHUNKS) {
     if (signal.aborted) break;
     const buf = safeRandom(size);
 
-    const result = await uploadChunk(buf, signal, (loaded, chunkMbps) => {
-      const elapsed = (performance.now() - t0) / 1000;
-      const cumMbps = ((totalBytes + loaded) * 8) / (elapsed * 1e6);
-      onUpdate(isFinite(cumMbps) ? cumMbps : chunkMbps);
+    const result = await uploadChunk(buf, signal, (loaded, elapsed) => {
+      // Live gauge: use current chunk's bytes/time + previous totals
+      const cumBytes  = totalBytes + loaded;
+      const cumElapsed= totalElapsed + elapsed;
+      if (cumElapsed > 0) {
+        const mbps = (cumBytes * 8) / (cumElapsed * 1e6);
+        if (isFinite(mbps) && mbps > 0) onUpdate(mbps);
+      }
     });
 
-    if (result.bytes > 0) {
-      totalBytes += result.bytes;
-      if (result.serverElapsed) totalServerTime += result.serverElapsed;
-
-      // Prefer server-measured time (more accurate), fall back to client time
-      const elapsed = totalServerTime > 0
-        ? totalServerTime
-        : (performance.now() - t0) / 1000;
-
-      const mbps = (totalBytes * 8) / (elapsed * 1e6);
+    if (result.bytes > 0 && result.clientElapsed > 0.05) {
+      totalBytes   += result.bytes;
+      totalElapsed += result.clientElapsed;
+      const mbps = (totalBytes * 8) / (totalElapsed * 1e6);
       if (isFinite(mbps) && mbps > 0) onUpdate(mbps);
     }
-    await sleep(40);
+    await sleep(30);
   }
 
-  const elapsed = totalServerTime > 0
-    ? totalServerTime
-    : (performance.now() - t0) / 1000;
-
-  if (totalBytes === 0 || elapsed < 0.2) return null;
-  const result = (totalBytes * 8) / (elapsed * 1e6);
-  return isFinite(result) ? result : null;
+  if (totalBytes === 0 || totalElapsed < 0.2) return null;
+  const final = (totalBytes * 8) / (totalElapsed * 1e6);
+  return isFinite(final) ? final : null;
 }
 
 /* ═══════════════════════════════════════════════════
