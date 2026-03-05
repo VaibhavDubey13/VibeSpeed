@@ -9,7 +9,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
 <!-- Google AdSense -->
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5716177368335303" crossorigin="anonymous"></script>
-<script defer src="/_vercel/insights/script.js"></script>
 <style>
 /* ═══════════════════════════════════════════════════
    VibeSpeed — Cosmic Dark Purple
@@ -922,10 +921,19 @@ const S = {
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
 const CF_DOWN  = 'https://speed.cloudflare.com/__down?bytes=';
 
-// Download chunks: progressive sizes
-const DL_CHUNKS = [1e5, 5e5, 2e6, 5e6, 10e6, 10e6];
-// Upload chunk sizes in bytes — sent via XHR (avoids CORS preflight on this endpoint)
-const UL_CHUNKS = [256e3, 512e3, 1e6, 2e6, 4e6, 4e6];
+// Safari detection — ReadableStream.getReader() exists but body streaming
+// is unreliable in older Safari; we fall back to arrayBuffer() there
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+// Download: run parallel streams for fast connections (gigabit needs parallelism)
+// Each "round" fetches N concurrent streams; we scale rounds until we saturate
+const DL_SINGLE   = 25e6;   // 25MB per stream
+const DL_PARALLEL = 4;      // concurrent streams per round
+const DL_ROUNDS   = 3;      // how many parallel rounds to run
+const DL_WARMUP   = 1e6;    // 1MB warm-up (discarded)
+
+// Upload chunks — larger for fast connections
+const UL_CHUNKS = [512e3, 1e6, 4e6, 8e6, 8e6, 8e6];
 
 // ── Safe random buffer (crypto limit = 65536 per call) ──
 function safeRandom(n) {
@@ -1193,35 +1201,80 @@ async function measurePing(signal) {
   };
 }
 
-// ── DOWNLOAD (streaming ReadableStream for live progress) ────
-async function measureDownload(signal, onUpdate) {
-  let totalBytes = 0, t0 = performance.now();
+// ── DOWNLOAD — parallel streams + Safari fallback ────────────────────────────
+// Problem 1: A single 10MB stream caps out ~300Mbps because JS can't process
+//   ReadableStream chunks fast enough. Parallel streams fix this.
+// Problem 2: Safari's ReadableStream body reader is unreliable.
+//   We use arrayBuffer() as a fallback which Safari handles fine.
 
-  for (const bytes of DL_CHUNKS) {
+async function fetchStreamBytes(bytes, signal, onChunk) {
+  const res = await fetch(`${CF_DOWN}${bytes}`, { cache: 'no-store', signal });
+
+  if (isSafari || !res.body) {
+    // Safari fallback: load entire response at once
+    const buf = await res.arrayBuffer();
+    onChunk(buf.byteLength);
+    return buf.byteLength;
+  }
+
+  // Streaming path: update gauge as chunks arrive
+  const reader = res.body.getReader();
+  let received = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    onChunk(value.byteLength);
+  }
+  return received;
+}
+
+async function measureDownload(signal, onUpdate) {
+  // ── Warm-up: 1MB to establish TCP window, result discarded
+  try {
+    await fetch(`${CF_DOWN}${DL_WARMUP}`, { cache: 'no-store', signal });
+  } catch(e) { if (e.name === 'AbortError') throw e; }
+
+  let totalBytes = 0;
+  const t0 = performance.now();
+
+  // ── Parallel rounds: fire DL_PARALLEL streams concurrently each round
+  for (let round = 0; round < DL_ROUNDS; round++) {
     if (signal.aborted) break;
-    try {
-      const res = await fetch(`${CF_DOWN}${bytes}`, { cache:'no-store', signal });
-      const reader = res.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalBytes += value.byteLength;
+
+    const promises = Array.from({ length: DL_PARALLEL }, () =>
+      fetchStreamBytes(DL_SINGLE, signal, (chunk) => {
+        totalBytes += chunk;
         const elapsed = (performance.now() - t0) / 1000;
-        if (elapsed > 0.3) onUpdate((totalBytes * 8) / (elapsed * 1e6));
-      }
-    } catch(e) { if (e.name==='AbortError') throw e; }
+        if (elapsed > 0.5) onUpdate((totalBytes * 8) / (elapsed * 1e6));
+      }).catch(e => { if (e.name === 'AbortError') throw e; return 0; })
+    );
+
+    await Promise.all(promises);
   }
 
   const elapsed = (performance.now() - t0) / 1000;
   return elapsed > 0.1 ? (totalBytes * 8) / (elapsed * 1e6) : 0;
 }
 
-// ── UPLOAD — Client-side timing only (accurate ISP measurement) ──────────────
-// Key insight: xhr.upload.onprogress fires as bytes physically leave your NIC.
-// Timing these events against bytes sent = your real upload speed to the server.
-// We deliberately IGNORE any server-reported timing — Vercel's datacenter
-// is too fast and would make upload look inflated.
-// We also run multiple chunks and take a weighted average for stability.
+// ── UPLOAD — XHR progress (Chrome/Firefox) + fetch timing (Safari) ───────────
+// Safari does not fire xhr.upload.onprogress reliably.
+// For Safari we use fetch() timing: time the entire POST from start to response.
+// For others we use XHR progress events for live gauge updates.
+
+async function uploadChunkSafari(buf, signal) {
+  // Safari: fetch timing — measures full round-trip but close enough
+  const t0 = performance.now();
+  try {
+    await fetch('/api/upload', {
+      method: 'POST',
+      body: buf,
+      headers: { 'Content-Type': 'application/octet-stream' },
+      signal,
+    });
+  } catch(e) { if (e.name === 'AbortError') throw e; return { bytes: 0, clientElapsed: 0 }; }
+  return { bytes: buf.byteLength, clientElapsed: (performance.now() - t0) / 1000 };
+}
 
 function uploadChunk(buf, signal, onProgress) {
   return new Promise((resolve) => {
@@ -1234,23 +1287,19 @@ function uploadChunk(buf, signal, onProgress) {
     xhr.upload.addEventListener('progress', (e) => {
       if (!e.lengthComputable || e.loaded === 0) return;
       const elapsed = (performance.now() - t0) / 1000;
-      // Only start reporting after 100ms to avoid OS buffer flush spikes
       if (elapsed > 0.1 && e.loaded > lastLoaded) {
         lastLoaded = e.loaded;
-        const mbps = (e.loaded * 8) / (elapsed * 1e6);
-        if (isFinite(mbps) && mbps > 0) onProgress(e.loaded, elapsed);
+        onProgress(e.loaded, elapsed);
       }
     });
 
     xhr.upload.addEventListener('load', () => {
-      // Upload complete — use final client time for this chunk
-      const elapsed = (performance.now() - t0) / 1000;
-      finish({ bytes: buf.byteLength, clientElapsed: elapsed });
+      finish({ bytes: buf.byteLength, clientElapsed: (performance.now() - t0) / 1000 });
     });
 
-    xhr.onload   = () => finish({ bytes: buf.byteLength, clientElapsed: (performance.now() - t0) / 1000 });
-    xhr.onerror  = () => finish({ bytes: 0, clientElapsed: 0 });
-    xhr.ontimeout= () => finish({ bytes: 0, clientElapsed: 0 });
+    xhr.onload    = () => finish({ bytes: buf.byteLength, clientElapsed: (performance.now() - t0) / 1000 });
+    xhr.onerror   = () => finish({ bytes: 0, clientElapsed: 0 });
+    xhr.ontimeout = () => finish({ bytes: 0, clientElapsed: 0 });
     signal.addEventListener('abort', () => { xhr.abort(); finish({ bytes: 0, clientElapsed: 0 }); }, { once: true });
 
     xhr.open('POST', '/api/upload', true);
@@ -1261,29 +1310,29 @@ function uploadChunk(buf, signal, onProgress) {
 }
 
 async function measureUpload(signal, onUpdate) {
-  // Warm-up: one small chunk to establish connection, result discarded
+  // Warm-up chunk — discarded, establishes TCP connection
   try {
-    const warmBuf = safeRandom(64 * 1024); // 64KB
-    await uploadChunk(warmBuf, signal, () => {});
+    const warmBuf = safeRandom(256 * 1024);
+    if (isSafari) await uploadChunkSafari(warmBuf, signal);
+    else await uploadChunk(warmBuf, signal, () => {});
   } catch(e) { if (e.name === 'AbortError') throw e; }
 
   let totalBytes = 0;
-  let totalElapsed = 0; // cumulative client-side upload time only
-  const t0 = performance.now();
+  let totalElapsed = 0;
 
   for (const size of UL_CHUNKS) {
     if (signal.aborted) break;
     const buf = safeRandom(size);
+    let result;
 
-    const result = await uploadChunk(buf, signal, (loaded, elapsed) => {
-      // Live gauge: use current chunk's bytes/time + previous totals
-      const cumBytes  = totalBytes + loaded;
-      const cumElapsed= totalElapsed + elapsed;
-      if (cumElapsed > 0) {
-        const mbps = (cumBytes * 8) / (cumElapsed * 1e6);
-        if (isFinite(mbps) && mbps > 0) onUpdate(mbps);
-      }
-    });
+    if (isSafari) {
+      result = await uploadChunkSafari(buf, signal);
+    } else {
+      result = await uploadChunk(buf, signal, (loaded, elapsed) => {
+        const cumMbps = ((totalBytes + loaded) * 8) / ((totalElapsed + elapsed) * 1e6);
+        if (isFinite(cumMbps) && cumMbps > 0) onUpdate(cumMbps);
+      });
+    }
 
     if (result.bytes > 0 && result.clientElapsed > 0.05) {
       totalBytes   += result.bytes;
