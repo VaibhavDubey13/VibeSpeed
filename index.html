@@ -1135,7 +1135,7 @@ function uploadChunk(buf, signal, onProgress) {
     xhr.ontimeout = () => finish({ bytes: 0, serverElapsed: null });
     signal.addEventListener('abort', () => { xhr.abort(); finish({ bytes: 0, serverElapsed: null }); }, { once: true });
 
-    xhr.open('POST', '/api/upload', true);
+    xhr.open('POST', '/upload', true);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.timeout = 30000;
     xhr.send(buf);
