@@ -798,7 +798,6 @@ const S = {
 // ── Endpoints ────────────────────────────────────────
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
 const CF_DOWN  = 'https://speed.cloudflare.com/__down?bytes=';
-const CF_UP    = 'https://speed.cloudflare.com/__up';
 
 // Download chunks: progressive sizes
 const DL_CHUNKS = [1e5, 5e5, 2e6, 5e6, 10e6, 10e6];
@@ -1100,59 +1099,83 @@ async function measureDownload(signal, onUpdate) {
 // Key insight: measure the time for data to leave the local buffer using
 // the Beacon API (always allowed) combined with fetch timing.
 
-// ── UPLOAD via XHR with live progress events ─────────────────────────────────
-// From a real origin (Vercel/localhost), Cloudflare's __up endpoint works fine.
-// XHR gives us upload.onprogress for live Mbps updates during the transfer.
-// We run chunks sequentially and accumulate total bytes / total time.
+// ── UPLOAD via /api/upload proxy + XHR live progress ─────────────────────────
+// Browser POSTs to /api/upload (same origin = zero CORS issues).
+// The Vercel serverless function forwards data to Cloudflare server-side.
+// XHR upload.onprogress gives us live byte counts for real-time gauge updates.
+// The server also returns precise elapsed time for a final accurate Mbps figure.
 
-function uploadChunk(url, buf, signal, onProgress) {
+function uploadChunk(buf, signal, onProgress) {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     const t0 = performance.now();
     let settled = false;
-    const finish = (sent) => { if (!settled) { settled = true; resolve(sent); } };
+    const finish = (result) => { if (!settled) { settled = true; resolve(result); } };
 
+    // Live progress — fires as bytes leave the OS buffer
     xhr.upload.onprogress = (e) => {
-      if (!e.lengthComputable) return;
+      if (!e.lengthComputable || e.loaded === 0) return;
       const elapsed = (performance.now() - t0) / 1000;
-      if (elapsed > 0.05 && e.loaded > 0) {
+      if (elapsed > 0.05) {
         const mbps = (e.loaded * 8) / (elapsed * 1e6);
         if (isFinite(mbps) && mbps > 0) onProgress(e.loaded, mbps);
       }
     };
 
-    xhr.onload    = () => finish(buf.byteLength);
-    xhr.onerror   = () => finish(0);
-    xhr.ontimeout = () => finish(0);
-    signal.addEventListener('abort', () => { xhr.abort(); finish(0); }, { once: true });
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        // Use server-measured elapsed time for accuracy (removes server processing time)
+        finish({ bytes: data.bytes || buf.byteLength, serverElapsed: data.elapsed || null });
+      } catch {
+        finish({ bytes: buf.byteLength, serverElapsed: null });
+      }
+    };
+    xhr.onerror   = () => finish({ bytes: 0, serverElapsed: null });
+    xhr.ontimeout = () => finish({ bytes: 0, serverElapsed: null });
+    signal.addEventListener('abort', () => { xhr.abort(); finish({ bytes: 0, serverElapsed: null }); }, { once: true });
 
-    xhr.open('POST', url, true);
+    xhr.open('POST', '/api/upload', true);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.timeout = 25000;
+    xhr.timeout = 30000;
     xhr.send(buf);
   });
 }
 
 async function measureUpload(signal, onUpdate) {
   let totalBytes = 0;
+  let totalServerTime = 0; // sum of server-measured elapsed per chunk
   const t0 = performance.now();
 
   for (const size of UL_CHUNKS) {
     if (signal.aborted) break;
     const buf = safeRandom(size);
 
-    const sent = await uploadChunk(CF_UP, buf, signal, (loaded, chunkMbps) => {
-      // Live update: weigh chunk speed against cumulative total
+    const result = await uploadChunk(buf, signal, (loaded, chunkMbps) => {
       const elapsed = (performance.now() - t0) / 1000;
       const cumMbps = ((totalBytes + loaded) * 8) / (elapsed * 1e6);
       onUpdate(isFinite(cumMbps) ? cumMbps : chunkMbps);
     });
 
-    if (sent > 0) totalBytes += sent;
+    if (result.bytes > 0) {
+      totalBytes += result.bytes;
+      if (result.serverElapsed) totalServerTime += result.serverElapsed;
+
+      // Prefer server-measured time (more accurate), fall back to client time
+      const elapsed = totalServerTime > 0
+        ? totalServerTime
+        : (performance.now() - t0) / 1000;
+
+      const mbps = (totalBytes * 8) / (elapsed * 1e6);
+      if (isFinite(mbps) && mbps > 0) onUpdate(mbps);
+    }
     await sleep(40);
   }
 
-  const elapsed = (performance.now() - t0) / 1000;
+  const elapsed = totalServerTime > 0
+    ? totalServerTime
+    : (performance.now() - t0) / 1000;
+
   if (totalBytes === 0 || elapsed < 0.2) return null;
   const result = (totalBytes * 8) / (elapsed * 1e6);
   return isFinite(result) ? result : null;
