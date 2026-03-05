@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<!-- Google AdSense -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5716177368335303" crossorigin="anonymous"></script>
 <style>
 /* ═══════════════════════════════════════════════════
    VibeSpeed — Cosmic Dark Purple
@@ -580,14 +582,92 @@ header {
 
 /* ── Footer ──────────────────────────────────── */
 footer {
-  margin-top: 40px;
-  text-align: center;
-  font-size: 11px;
-  color: var(--text3);
-  line-height: 1.7;
+  width: 100%;
+  margin-top: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding-bottom: 40px;
 }
 
-footer a { color: var(--text3); text-decoration: underline; text-underline-offset: 3px; }
+/* BMC section */
+.bmc-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 20px;
+  background: rgba(189,95,255,0.07);
+  border: 1px solid rgba(189,95,255,0.2);
+  border-radius: var(--r);
+}
+
+.bmc-msg {
+  font-size: 13px;
+  color: var(--text2);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* AdSense slot */
+.ad-slot {
+  width: 100%;
+  min-height: 90px;
+  border-radius: var(--r);
+  overflow: hidden;
+  background: rgba(255,255,255,0.02);
+  border: 1px dashed rgba(255,255,255,0.06);
+}
+
+/* Credits */
+.footer-credits {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.footer-brand {
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  letter-spacing: 0.02em;
+}
+
+.footer-brand a {
+  color: #CE93D8;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.footer-brand a:hover { color: #E040FB; }
+
+.footer-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.footer-links a {
+  color: var(--text3);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+.footer-links a:hover { color: var(--text2); }
+
+.footer-dot { color: var(--text3); }
+
+.footer-note {
+  font-size: 10px;
+  color: var(--text3);
+  opacity: 0.7;
+  letter-spacing: 0.03em;
+}
 
 /* ── Shimmer loader on cards ─────────────────── */
 @keyframes shimmer {
@@ -740,8 +820,50 @@ footer a { color: var(--text3); text-decoration: underline; text-underline-offse
   </div>
 
   <footer>
-    VibeSpeed uses <a href="https://speed.cloudflare.com" target="_blank" rel="noopener">Cloudflare Speed Test</a> servers.<br/>
-    No data is stored externally. All history is saved locally in your browser.
+
+    <!-- Buy Me a Coffee -->
+    <div class="bmc-wrap">
+      <p class="bmc-msg">Loving VibeSpeed? Support the creator ☕</p>
+      <script type="text/javascript"
+        src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js"
+        data-name="bmc-button"
+        data-slug="Mathonymics"
+        data-color="#BD5FFF"
+        data-emoji="☕"
+        data-font="Cookie"
+        data-text="Buy me a Coffee"
+        data-outline-color="#000000"
+        data-font-color="#ffffff"
+        data-coffee-color="#FFDD00">
+      </script>
+    </div>
+
+    <!-- Ad slot — auto-filled by AdSense once approved -->
+    <div class="ad-slot">
+      <ins class="adsbygoogle"
+           style="display:block"
+           data-ad-client="ca-pub-5716177368335303"
+           data-ad-slot="auto"
+           data-ad-format="auto"
+           data-full-width-responsive="true"></ins>
+      <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+
+    <!-- Credits & links -->
+    <div class="footer-credits">
+      <div class="footer-brand">
+        VibeSpeed — by <a href="https://mathonymics.in" target="_blank" rel="noopener">@Mathonymics</a>
+      </div>
+      <div class="footer-links">
+        <a href="https://mathonymics.in" target="_blank" rel="noopener">mathonymics.in</a>
+        <span class="footer-dot">·</span>
+        <a href="https://speed.cloudflare.com" target="_blank" rel="noopener">Powered by Cloudflare</a>
+      </div>
+      <div class="footer-note">
+        No data stored externally · History saved locally in your browser
+      </div>
+    </div>
+
   </footer>
 
 </div>
