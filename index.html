@@ -561,6 +561,30 @@ header {
   text-transform: uppercase;
 }
 
+/* ── Ad blocker warning ──────────────────────────── */
+.adblock-warn {
+  width: 100%;
+  background: rgba(251,191,36,0.07);
+  border: 1px solid rgba(251,191,36,0.35);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeIn 0.3s ease;
+}
+.abw-top { display: flex; align-items: center; gap: 8px; }
+.abw-icon { font-size: 16px; flex-shrink: 0; }
+.abw-title { font-size: 12px; font-weight: 700; color: #FCD34D; flex: 1; }
+.abw-close { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 4px; }
+.abw-close:hover { color: var(--text); }
+.abw-msg { font-size: 11px; color: var(--text3); line-height: 1.6; }
+.abw-msg code { background: rgba(255,255,255,0.07); padding: 1px 5px; border-radius: 4px; color: var(--text2); font-size: 10px; }
+.abw-steps { display: flex; flex-direction: column; gap: 4px; }
+.abw-step { font-size: 10px; color: var(--text3); padding: 5px 8px; background: rgba(0,0,0,0.2); border-radius: 6px; line-height: 1.5; }
+.abw-step::before { content: '→ '; color: #FCD34D; }
+
 /* ── Error banner ────────────────────────────── */
 .error-banner {
   width: 100%;
@@ -753,6 +777,23 @@ footer {
     </button>
   </div>
 
+  <!-- Ad blocker warning -->
+  <div class="adblock-warn" id="adblockWarn" style="display:none">
+    <div class="abw-top">
+      <span class="abw-icon">🛡️</span>
+      <strong class="abw-title">Ad blocker detected</strong>
+      <button class="abw-close" id="abwClose">✕</button>
+    </div>
+    <div class="abw-msg">
+      Your ad blocker is blocking <code>speed.cloudflare.com</code>, which is required for accurate speed measurements. Please whitelist this site or pause your ad blocker, then refresh.
+    </div>
+    <div class="abw-steps">
+      <span class="abw-step">uBlock Origin → click the icon → click the power button</span>
+      <span class="abw-step">AdBlock / AdBlock Plus → "Don't run on this page"</span>
+      <span class="abw-step">Brave → click the lion icon → toggle "Shields"</span>
+    </div>
+  </div>
+
   <!-- Error banner -->
   <div class="error-banner" id="errBanner" style="display:none">
     <span class="error-icon">⚡</span>
@@ -917,11 +958,12 @@ const S = {
   results: { dl: null, ul: null, pi: null, ji: null }
 };
 
-// ── Endpoints — all proxied through our own domain ───────────────────────────
-// Cloudflare's speed.cloudflare.com is on ad blocker filter lists.
-// By routing through /api/* on our own Vercel domain, ad blockers can't block us.
-const PING_URL = '/api/ping';
-const DOWN_URL = '/api/download?bytes=';
+// ── Endpoints ────────────────────────────────────────
+// Ping and download go DIRECT to Cloudflare for accuracy.
+// Proxying adds a datacenter hop which inflates download and destroys ping.
+// Upload goes through our proxy because Cloudflare blocks cross-origin POSTs.
+const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
+const CF_DOWN  = 'https://speed.cloudflare.com/__down?bytes=';
 
 // Safari detection — ReadableStream.getReader() exists but body streaming
 // is unreliable in older Safari; we fall back to arrayBuffer() there
@@ -1180,13 +1222,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function measurePing(signal) {
   const samples = [];
   // Warm up
-  try { await fetch(PING_URL, { cache:'no-store', signal }); } catch {}
+  try { await fetch(CF_TRACE, { cache:'no-store', signal }); } catch {}
 
   for (let i = 0; i < 14; i++) {
     if (signal.aborted) break;
     try {
       const t = performance.now();
-      await fetch(PING_URL, { cache:'no-store', signal });
+      await fetch(CF_TRACE, { cache:'no-store', signal });
       samples.push(performance.now() - t);
     } catch(e) { if (e.name==='AbortError') throw e; }
     await sleep(60);
@@ -1210,7 +1252,7 @@ async function measurePing(signal) {
 //   We use arrayBuffer() as a fallback which Safari handles fine.
 
 async function fetchStreamBytes(bytes, signal, onChunk) {
-  const res = await fetch(`${DOWN_URL}${bytes}`, { cache: 'no-store', signal });
+  const res = await fetch(`${CF_DOWN}${bytes}`, { cache: 'no-store', signal });
 
   if (isSafari || !res.body) {
     // Safari fallback: load entire response at once
@@ -1234,7 +1276,7 @@ async function fetchStreamBytes(bytes, signal, onChunk) {
 async function measureDownload(signal, onUpdate) {
   // ── Warm-up: 1MB to establish TCP window, result discarded
   try {
-    await fetch(`${DOWN_URL}${DL_WARMUP}`, { cache: 'no-store', signal });
+    await fetch(`${CF_DOWN}${DL_WARMUP}`, { cache: 'no-store', signal });
   } catch(e) { if (e.name === 'AbortError') throw e; }
 
   let totalBytes = 0;
@@ -1529,10 +1571,31 @@ window.addEventListener('offline', () => {
   if (S.running) { S.abortCtrl.abort(); showErr("Lost connection mid-test."); }
 });
 
+// ── Ad blocker detection ─────────────────────────────
+const adblockWarn = $('adblockWarn');
+const abwClose    = $('abwClose');
+
+async function detectAdBlock() {
+  try {
+    // Try a tiny fetch to Cloudflare's trace — ad blockers will block this
+    const res = await fetch('https://speed.cloudflare.com/cdn-cgi/trace', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) throw new Error('blocked');
+  } catch(e) {
+    // Blocked — show the warning
+    adblockWarn.style.display = 'flex';
+  }
+}
+
+abwClose.addEventListener('click', () => { adblockWarn.style.display = 'none'; });
+
 // Entry animation
 function init() {
   drawGauge(0, 100, 'idle');
   renderHistory();
+  detectAdBlock(); // runs silently in background, shows banner only if blocked
 
   // Sweep-and-retract intro
   let v = 0, going = true;
