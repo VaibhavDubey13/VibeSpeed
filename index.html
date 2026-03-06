@@ -917,9 +917,11 @@ const S = {
   results: { dl: null, ul: null, pi: null, ji: null }
 };
 
-// ── Endpoints ────────────────────────────────────────
-const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
-const CF_DOWN  = 'https://speed.cloudflare.com/__down?bytes=';
+// ── Endpoints — all proxied through our own domain ───────────────────────────
+// Cloudflare's speed.cloudflare.com is on ad blocker filter lists.
+// By routing through /api/* on our own Vercel domain, ad blockers can't block us.
+const PING_URL = '/api/ping';
+const DOWN_URL = '/api/download?bytes=';
 
 // Safari detection — ReadableStream.getReader() exists but body streaming
 // is unreliable in older Safari; we fall back to arrayBuffer() there
@@ -1178,13 +1180,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function measurePing(signal) {
   const samples = [];
   // Warm up
-  try { await fetch(CF_TRACE, { cache:'no-store', signal }); } catch {}
+  try { await fetch(PING_URL, { cache:'no-store', signal }); } catch {}
 
   for (let i = 0; i < 14; i++) {
     if (signal.aborted) break;
     try {
       const t = performance.now();
-      await fetch(CF_TRACE, { cache:'no-store', signal });
+      await fetch(PING_URL, { cache:'no-store', signal });
       samples.push(performance.now() - t);
     } catch(e) { if (e.name==='AbortError') throw e; }
     await sleep(60);
@@ -1208,7 +1210,7 @@ async function measurePing(signal) {
 //   We use arrayBuffer() as a fallback which Safari handles fine.
 
 async function fetchStreamBytes(bytes, signal, onChunk) {
-  const res = await fetch(`${CF_DOWN}${bytes}`, { cache: 'no-store', signal });
+  const res = await fetch(`${DOWN_URL}${bytes}`, { cache: 'no-store', signal });
 
   if (isSafari || !res.body) {
     // Safari fallback: load entire response at once
@@ -1232,7 +1234,7 @@ async function fetchStreamBytes(bytes, signal, onChunk) {
 async function measureDownload(signal, onUpdate) {
   // ── Warm-up: 1MB to establish TCP window, result discarded
   try {
-    await fetch(`${CF_DOWN}${DL_WARMUP}`, { cache: 'no-store', signal });
+    await fetch(`${DOWN_URL}${DL_WARMUP}`, { cache: 'no-store', signal });
   } catch(e) { if (e.name === 'AbortError') throw e; }
 
   let totalBytes = 0;
