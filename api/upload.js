@@ -1,23 +1,49 @@
-export const config = {
-  api: {
-    bodyParser: false,
-    sizeLimit: '32mb',  // allow up to 32MB chunks for fast connections
-  },
+// api/upload.js — Edge Runtime
+// Edge functions have no body size limit (unlike Serverless ~4.5MB cap).
+// Uses native Web Streams API (request.body.getReader()) to drain data.
+// Responds immediately after receiving — client-side timing measures speed.
+
+export const config = { runtime: 'edge' };
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+export default async function handler(request) {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS });
+  }
 
-  if (req.method === 'OPTIONS') { res.status(200).end(); return; }
-  if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+    });
+  }
 
   try {
-    let byteLength = 0;
-    for await (const chunk of req) byteLength += chunk.length;
-    res.status(200).json({ ok: true, bytes: byteLength });
+    let totalBytes = 0;
+
+    // Drain the request body as a stream — no buffering in memory
+    if (request.body) {
+      const reader = request.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+      }
+    }
+
+    return new Response(JSON.stringify({ ok: true, bytes: totalBytes }), {
+      status: 200,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+    });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    return new Response(JSON.stringify({ ok: false, error: err.message }), {
+      status: 500,
+      headers: { ...CORS, 'Content-Type': 'application/json' },
+    });
   }
 }
