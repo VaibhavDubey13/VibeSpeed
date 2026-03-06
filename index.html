@@ -959,11 +959,24 @@ const S = {
 };
 
 // ── Endpoints ────────────────────────────────────────
-// Ping and download go DIRECT to Cloudflare for accuracy.
-// Proxying adds a datacenter hop which inflates download and destroys ping.
-// Upload goes through our proxy because Cloudflare blocks cross-origin POSTs.
+// Primary: Cloudflare (most accurate, globally distributed)
+// Fallbacks: used silently if Cloudflare is blocked by ad blocker
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
 const CF_DOWN  = 'https://speed.cloudflare.com/__down?bytes=';
+
+// Fallback ping targets — small cacheable responses to measure latency
+const PING_FALLBACKS = [
+  'https://www.google.com/generate_204',       // returns 204, tiny, global
+  'https://one.one.one.one/cdn-cgi/trace',     // Cloudflare 1.1.1.1 (different domain)
+];
+
+// Fallback download files — publicly available, no auth, CORS-open
+// Sizes chosen to give accurate readings without being too slow on slow connections
+const DL_FALLBACKS = [
+  { url: 'https://speed.hetzner.de/100MB.bin',          bytes: 25e6 },
+  { url: 'https://bouygues.testdebit.info/100M.iso',     bytes: 25e6 },
+  { url: 'https://proof.ovh.net/files/100Mb.dat',        bytes: 25e6 },
+];
 
 // Safari detection — ReadableStream.getReader() exists but body streaming
 // is unreliable in older Safari; we fall back to arrayBuffer() there
@@ -1220,15 +1233,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── PING ─────────────────────────────────────────────
 async function measurePing(signal) {
+  // Find a working ping target — try Cloudflare first, then fallbacks
+  let pingUrl = null;
+  for (const url of [CF_TRACE, ...PING_FALLBACKS]) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      await fetch(url, { cache: 'no-store', signal: ctrl.signal, mode: 'no-cors' });
+      clearTimeout(timer);
+      pingUrl = url;
+      break;
+    } catch(e) {
+      if (e.name === 'AbortError' && signal.aborted) throw e;
+    }
+  }
+
+  if (!pingUrl) throw new Error('Ping failed — all endpoints unreachable');
+
   const samples = [];
-  // Warm up
-  try { await fetch(CF_TRACE, { cache:'no-store', signal }); } catch {}
+  // Warm up on the working endpoint
+  try { await fetch(pingUrl, { cache:'no-store', signal, mode:'no-cors' }); } catch {}
 
   for (let i = 0; i < 14; i++) {
     if (signal.aborted) break;
     try {
       const t = performance.now();
-      await fetch(CF_TRACE, { cache:'no-store', signal });
+      await fetch(pingUrl, { cache:'no-store', signal, mode:'no-cors' });
       samples.push(performance.now() - t);
     } catch(e) { if (e.name==='AbortError') throw e; }
     await sleep(60);
@@ -1240,28 +1270,54 @@ async function measurePing(signal) {
   const avg = trimmed.reduce((a,b) => a+b, 0) / trimmed.length;
   const variance = trimmed.reduce((s,t) => s + (t-avg)**2, 0) / trimmed.length;
   return {
-    ping:   samples[Math.floor(samples.length * 0.2)],  // 20th-percentile = "best typical"
+    ping:   samples[Math.floor(samples.length * 0.2)],
     jitter: Math.sqrt(variance)
   };
 }
 
-// ── DOWNLOAD — parallel streams + Safari fallback ────────────────────────────
-// Problem 1: A single 10MB stream caps out ~300Mbps because JS can't process
-//   ReadableStream chunks fast enough. Parallel streams fix this.
-// Problem 2: Safari's ReadableStream body reader is unreliable.
-//   We use arrayBuffer() as a fallback which Safari handles fine.
+// ── DOWNLOAD — parallel streams, Cloudflare primary + CDN fallbacks ──────────
+// If Cloudflare is blocked, silently falls back to Hetzner/OVH/Bouygues CDNs.
+// Parallel streams needed for gigabit+ connections (single stream caps ~300Mbps).
 
-async function fetchStreamBytes(bytes, signal, onChunk) {
-  const res = await fetch(`${CF_DOWN}${bytes}`, { cache: 'no-store', signal });
+async function probeDownloadEndpoint(signal) {
+  // Quick probe to find a working download source
+  // Try Cloudflare first, then public CDN test servers
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    await fetch(`${CF_DOWN}65536`, { cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(timer);
+    return 'cloudflare'; // Cloudflare works
+  } catch(e) {
+    if (e.name === 'AbortError' && signal.aborted) throw e;
+  }
+
+  // Try fallback CDNs
+  for (const fb of DL_FALLBACKS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const res = await fetch(fb.url, { cache: 'no-store', signal: ctrl.signal, method: 'HEAD' });
+      clearTimeout(timer);
+      if (res.ok || res.type === 'opaque') return fb;
+    } catch(e) {
+      if (e.name === 'AbortError' && signal.aborted) throw e;
+    }
+  }
+  return null; // all blocked
+}
+
+async function fetchStreamBytes(url, bytes, signal, onChunk) {
+  // Build the actual URL (Cloudflare uses query param, others are fixed files)
+  const fetchUrl = url === 'cloudflare' ? `${CF_DOWN}${bytes}` : url;
+  const res = await fetch(fetchUrl, { cache: 'no-store', signal });
 
   if (isSafari || !res.body) {
-    // Safari fallback: load entire response at once
     const buf = await res.arrayBuffer();
     onChunk(buf.byteLength);
     return buf.byteLength;
   }
 
-  // Streaming path: update gauge as chunks arrive
   const reader = res.body.getReader();
   let received = 0;
   while (true) {
@@ -1274,20 +1330,30 @@ async function fetchStreamBytes(bytes, signal, onChunk) {
 }
 
 async function measureDownload(signal, onUpdate) {
-  // ── Warm-up: 1MB to establish TCP window, result discarded
+  // Probe which endpoint works
+  const endpoint = await probeDownloadEndpoint(signal);
+  if (!endpoint) throw new Error('Download blocked — no reachable server');
+
+  // Warm-up to establish TCP window (discarded)
   try {
-    await fetch(`${CF_DOWN}${DL_WARMUP}`, { cache: 'no-store', signal });
+    const warmUrl = endpoint === 'cloudflare' ? `${CF_DOWN}${DL_WARMUP}` : endpoint.url;
+    await fetch(warmUrl, { cache: 'no-store', signal });
   } catch(e) { if (e.name === 'AbortError') throw e; }
 
   let totalBytes = 0;
   const t0 = performance.now();
 
-  // ── Parallel rounds: fire DL_PARALLEL streams concurrently each round
+  // For Cloudflare: use 4 parallel 25MB streams × 3 rounds (handles gigabit)
+  // For fallback CDNs: use 2 parallel streams (their servers may throttle more)
+  const parallel = endpoint === 'cloudflare' ? DL_PARALLEL : 2;
+  const chunkBytes = endpoint === 'cloudflare' ? DL_SINGLE : (endpoint.bytes || 10e6);
+
   for (let round = 0; round < DL_ROUNDS; round++) {
     if (signal.aborted) break;
+    const dlEndpoint = endpoint === 'cloudflare' ? 'cloudflare' : endpoint.url;
 
-    const promises = Array.from({ length: DL_PARALLEL }, () =>
-      fetchStreamBytes(DL_SINGLE, signal, (chunk) => {
+    const promises = Array.from({ length: parallel }, () =>
+      fetchStreamBytes(dlEndpoint, chunkBytes, signal, (chunk) => {
         totalBytes += chunk;
         const elapsed = (performance.now() - t0) / 1000;
         if (elapsed > 0.5) onUpdate((totalBytes * 8) / (elapsed * 1e6));
@@ -1589,17 +1655,20 @@ const adblockWarn = $('adblockWarn');
 const abwClose    = $('abwClose');
 
 async function detectAdBlock() {
-  try {
-    // Try a tiny fetch to Cloudflare's trace — ad blockers will block this
-    const res = await fetch('https://speed.cloudflare.com/cdn-cgi/trace', {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) throw new Error('blocked');
-  } catch(e) {
-    // Blocked — show the warning
-    adblockWarn.style.display = 'flex';
+  // Try Cloudflare AND fallback ping endpoints — only warn if ALL are blocked
+  const targets = [CF_TRACE, ...PING_FALLBACKS];
+  for (const url of targets) {
+    try {
+      await fetch(url, {
+        cache: 'no-store',
+        mode: 'no-cors',
+        signal: AbortSignal.timeout(2500),
+      });
+      return; // at least one works — no warning needed
+    } catch(e) { /* try next */ }
   }
+  // All blocked — show warning
+  adblockWarn.style.display = 'flex';
 }
 
 abwClose.addEventListener('click', () => { adblockWarn.style.display = 'none'; });
