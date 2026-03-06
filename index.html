@@ -1490,9 +1490,22 @@ async function runTest() {
       resetUI();
     } else {
       console.error('[VibeSpeed]', err);
-      showErr("Test failed. Check your connection and try again.");
       gVal.classList.remove('live');
       gLabel.textContent = 'ERROR';
+
+      // If Cloudflare was blocked mid-test, show the adblock banner
+      // rather than a confusing generic error
+      const isNetworkErr = err.message?.includes('Failed to fetch')
+        || err.message?.includes('NetworkError')
+        || err.message?.includes('blocked')
+        || err.name === 'TypeError';
+
+      if (isNetworkErr) {
+        adblockWarn.style.display = 'flex';
+        showErr("Test blocked — see the warning above.");
+      } else {
+        showErr("Test failed. Check your connection and try again.");
+      }
     }
   } finally {
     S.running = false;
